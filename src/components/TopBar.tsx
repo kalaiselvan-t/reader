@@ -11,6 +11,7 @@ export function TopBar({ title, onBack }: { title: string; onBack?: () => void }
         padding: '14px 18px',
         background: 'rgba(11,11,13,0.72)',
         backdropFilter: 'saturate(180%) blur(20px)',
+        WebkitBackdropFilter: 'saturate(180%) blur(20px)',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}
     >

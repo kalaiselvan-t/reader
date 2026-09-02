@@ -9,10 +9,18 @@ export function Library({ onOpenBook }: { onOpenBook: (id: string) => void }) {
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const id = await importFile(file);
-      onOpenBook(id);
+      try {
+        const id = await importFile(file);
+        onOpenBook(id);
+      } catch (err) {
+        console.error('Failed to open EPUB:', err);
+        alert('Sorry — that file could not be opened as an EPUB.');
+      } finally {
+        e.target.value = '';
+      }
+    } else {
+      e.target.value = '';
     }
-    e.target.value = '';
   };
 
   return (
