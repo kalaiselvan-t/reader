@@ -25,15 +25,29 @@ export async function parseEpubMetadata(
   } catch {
     coverDataUrl = undefined;
   }
-  // Let epub.js's background navigation load settle before destroying the book —
-  // destroying while `loadNavigation` is still in flight leaves `book.loading`
-  // undefined by the time its `.then()` callback runs, producing an unhandled
-  // TypeError on every real EPUB import. `book.loaded.navigation` only ever
-  // resolves (epub.js never rejects it), so on a malformed EPUB where nav
-  // parsing never completes it would hang forever — race it against a short
-  // timeout so `destroy()` always eventually runs.
+  // Let epub.js's background load chains settle before destroying the book.
+  // Destroying while any of them is still in flight leaves internal state
+  // (`book.loading`, `book.resources`) undefined by the time a queued `.then()`
+  // callback runs, producing unhandled TypeErrors on real EPUB imports:
+  //   - `loadNavigation(...).then(() => this.loading.navigation.resolve(...))`
+  //     reads `this.loading` after destroy nulls it (the 'navigation' error).
+  //   - `resources.replacements().then(() => resources.replaceCss())` reads
+  //     `this.resources` after destroy nulls it (the 'replaceCss' error).
+  // `book.ready` is NOT sufficient to guard against the second one: it is
+  // `Promise.all([..., loaded.resources, ...])`, and `loaded.resources`
+  // resolves synchronously the instant the `Resources` object is constructed
+  // (epubjs `book.js` `unpack()`), *before* the replacements()/replaceCss()
+  // chain is even started — confirmed empirically (a spy on `replaceCss`
+  // never fires before `book.ready` resolves). `book.opened` is the promise
+  // that actually gates on that chain finishing (for archived/ArrayBuffer
+  // books, `unpack()` only resolves `book.opened` after
+  // `replacements().then(() => replaceCss())` and displayOptions settle), so
+  // it's the correct one to await here. Like `loaded.navigation`, `opened` is
+  // only ever resolved, never rejected, by epub.js, and can hang indefinitely
+  // on a malformed EPUB — race it against a short timeout so `destroy()`
+  // always eventually runs.
   await Promise.race([
-    book.loaded.navigation.catch(() => {}),
+    book.opened.catch(() => {}),
     new Promise((resolve) => setTimeout(resolve, 3000)),
   ]);
   book.destroy();
