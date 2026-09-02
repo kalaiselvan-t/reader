@@ -26,6 +26,10 @@ export function Reader({ bookId }: { bookId: string }) {
       const rec = await getBook(bookId);
       if (!rec || cancelled || !hostRef.current) return;
       const saved = await getProgress(bookId);
+      // Seed the progress bar from the saved record immediately — otherwise
+      // onRelocated (registered after render()) doesn't fire until the first
+      // page turn, so a resumed book shows a stale 0% until then.
+      setPercent(saved?.percent ?? 0);
       const rb = new ReaderBook(rec.data);
       bookRef.current = rb;
       // Pass the saved CFI into render so it paints there directly (no flash).

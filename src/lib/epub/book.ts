@@ -1,10 +1,53 @@
 import ePub, { type Book, type Rendition } from 'epubjs';
+import literata400 from '@fontsource/literata/files/literata-latin-400-normal.woff2?url';
+import literata600 from '@fontsource/literata/files/literata-latin-600-normal.woff2?url';
+import newsreader400 from '@fontsource/newsreader/files/newsreader-latin-400-normal.woff2?url';
+import newsreader600 from '@fontsource/newsreader/files/newsreader-latin-600-normal.woff2?url';
 
 export interface RenderTheme {
   fontFamily: string;
   fontSizePx: number;
   brightness: number; // 0.4 .. 1
 }
+
+// epub.js renders each chapter inside its own iframe, which is a separate
+// document — @font-face rules declared in the parent document (main.tsx's
+// `@fontsource/...` CSS imports) do not cross into it. Without this, the
+// rendition's `font-family` rule always falls through to the Georgia
+// fallback and switching readingFont is a visual no-op. Build the same
+// @font-face declarations from the same self-hosted woff2 files (bundled to
+// app-origin absolute URLs by Vite's `?url` import) and inject them directly
+// into each content document via a rendition content hook.
+const FONT_FACE_CSS = `
+@font-face {
+  font-family: 'Literata';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(${literata400}) format('woff2');
+}
+@font-face {
+  font-family: 'Literata';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(${literata600}) format('woff2');
+}
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(${newsreader400}) format('woff2');
+}
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(${newsreader600}) format('woff2');
+}
+`;
 
 export async function parseEpubMetadata(
   data: ArrayBuffer
@@ -100,6 +143,13 @@ export class ReaderBook {
       spread: 'auto',
     });
     this.rendition.themes.default(themeStyles(theme));
+    // Register before the first `display()` so the first-painted content
+    // document gets the @font-face rules too (not just later chapters).
+    this.rendition.hooks.content.register((contents: any) => {
+      const style = contents.document.createElement('style');
+      style.textContent = FONT_FACE_CSS;
+      contents.document.head.appendChild(style);
+    });
     await this.book.ready;
     // Paint the saved position (or book start) first so there's no flash-to-chapter-1.
     await this.rendition.display(startCfi);
