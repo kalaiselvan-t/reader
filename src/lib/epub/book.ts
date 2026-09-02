@@ -26,28 +26,36 @@ export async function parseEpubMetadata(
     coverDataUrl = undefined;
   }
   // Let epub.js's background load chains settle before destroying the book.
-  // Destroying while any of them is still in flight leaves internal state
+  // Destroying while either is still in flight leaves internal state
   // (`book.loading`, `book.resources`) undefined by the time a queued `.then()`
-  // callback runs, producing unhandled TypeErrors on real EPUB imports:
+  // callback runs, producing unhandled TypeErrors on real EPUB imports. Two
+  // *independent* chains need to be awaited — neither one covers the other:
   //   - `loadNavigation(...).then(() => this.loading.navigation.resolve(...))`
-  //     reads `this.loading` after destroy nulls it (the 'navigation' error).
+  //     (epubjs `book.js` `unpack()`) reads `this.loading` after destroy nulls
+  //     it (the 'navigation' error). This chain is separate from `opened` —
+  //     nothing on the `opened` path waits for it — so `book.opened` alone
+  //     does not guard against it. Guarded by `book.loaded.navigation`.
   //   - `resources.replacements().then(() => resources.replaceCss())` reads
   //     `this.resources` after destroy nulls it (the 'replaceCss' error).
-  // `book.ready` is NOT sufficient to guard against the second one: it is
-  // `Promise.all([..., loaded.resources, ...])`, and `loaded.resources`
-  // resolves synchronously the instant the `Resources` object is constructed
-  // (epubjs `book.js` `unpack()`), *before* the replacements()/replaceCss()
-  // chain is even started — confirmed empirically (a spy on `replaceCss`
-  // never fires before `book.ready` resolves). `book.opened` is the promise
-  // that actually gates on that chain finishing (for archived/ArrayBuffer
-  // books, `unpack()` only resolves `book.opened` after
-  // `replacements().then(() => replaceCss())` and displayOptions settle), so
-  // it's the correct one to await here. Like `loaded.navigation`, `opened` is
-  // only ever resolved, never rejected, by epub.js, and can hang indefinitely
-  // on a malformed EPUB — race it against a short timeout so `destroy()`
-  // always eventually runs.
+  //     `book.ready` does NOT guard against this: it's
+  //     `Promise.all([..., loaded.resources, ...])`, and `loaded.resources`
+  //     resolves synchronously the instant the `Resources` object is
+  //     constructed, *before* the replacements()/replaceCss() chain even
+  //     starts (confirmed empirically — a spy on `replaceCss` never fires
+  //     before `book.ready` resolves). `book.opened` is the promise that
+  //     actually gates on that chain finishing (for archived/ArrayBuffer
+  //     books, `unpack()` only resolves `book.opened` after
+  //     `replacements().then(() => replaceCss())` and displayOptions settle).
+  //     Guarded by `book.opened`.
+  // Both `opened` and `loaded.navigation` are only ever resolved, never
+  // rejected, by epub.js, and either can hang indefinitely on a malformed
+  // EPUB — race the pair against a short timeout so `destroy()` always
+  // eventually runs.
   await Promise.race([
-    book.opened.catch(() => {}),
+    Promise.all([
+      book.opened.catch(() => {}),
+      book.loaded.navigation.catch(() => {}),
+    ]),
     new Promise((resolve) => setTimeout(resolve, 3000)),
   ]);
   book.destroy();
