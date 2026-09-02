@@ -48,8 +48,8 @@ reader/
       epub/
         book.ts                 # epub.js wrapper: load, metadata, render, locations
     state/
-      library.ts               # React context: books list + add/remove
-      settings.ts              # React context: reading settings (persisted)
+      library.tsx              # React context: books list + add/remove
+      settings.tsx             # React context: reading settings (persisted)
     components/
       TopBar.tsx
       Library.tsx               # cover grid + "Open file" button
@@ -90,6 +90,8 @@ Split rationale: pure logic (`hash.ts`, `storage/db.ts`) is isolated and unit-te
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@fontsource/literata": "^5.1.0",
+    "@fontsource/newsreader": "^5.1.0",
     "epubjs": "^0.3.93",
     "idb": "^8.0.0",
     "react": "^18.3.1",
@@ -168,6 +170,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        // Precache fonts too so reading typography works fully offline.
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+      },
       manifest: {
         name: 'Reader',
         short_name: 'Reader',
@@ -594,8 +600,12 @@ button:active { transform: scale(0.97); }
 
 - [ ] **Step 3: Import stylesheets in `src/main.tsx`**
 
-Add these imports at the top of `src/main.tsx`, above the React imports:
+Add these imports at the top of `src/main.tsx`, above the React imports (self-hosted OFL fonts first, so the reading typography works offline and matches the premium spec):
 ```tsx
+import '@fontsource/literata/400.css';
+import '@fontsource/literata/600.css';
+import '@fontsource/newsreader/400.css';
+import '@fontsource/newsreader/600.css';
 import './styles/tokens.css';
 import './styles/global.css';
 ```
@@ -625,13 +635,14 @@ git commit -m "feat: premium dark theme tokens and base chrome"
   - `parseEpubMetadata(data: ArrayBuffer): Promise<{ title: string; author: string; coverDataUrl?: string }>` — used when importing a file.
   - `class ReaderBook` wrapping an epub.js rendition:
     - `constructor(data: ArrayBuffer)`
-    - `render(el: HTMLElement, theme: RenderTheme): Promise<void>`
+    - `render(el: HTMLElement, theme: RenderTheme, startCfi?: string): Promise<void>` — displays `startCfi` on the first paint (falls back to book start when omitted, avoiding a flash-to-chapter-1); generates locations in the background so text paints immediately.
     - `next(): Promise<void>` / `prev(): Promise<void>`
-    - `displayCfi(cfi: string): Promise<void>`
     - `onRelocated(cb: (loc: { cfi: string; percent: number }) => void): void`
     - `applyTheme(theme: RenderTheme): void`
     - `destroy(): void`
   - `interface RenderTheme { fontFamily: string; fontSizePx: number; brightness: number }`
+
+**Verify before committing (highest-risk unknown in Plan 1):** confirm `ePub(data)` actually loads a real EPUB from an `ArrayBuffer`. If it fails, use `ePub(data, { openAs: 'binary' })` instead and record the working call form in the task report so Task 8 inherits it. Also confirm `coverDataUrl` (a base64 data URL) stays valid after `book.destroy()`.
 
 - [ ] **Step 1: Write the implementation**
 
@@ -692,12 +703,13 @@ function themeStyles(theme: RenderTheme): Record<string, Record<string, string>>
 export class ReaderBook {
   private book: Book;
   private rendition: Rendition | null = null;
+  private locationsReady: Promise<unknown> | null = null;
 
   constructor(data: ArrayBuffer) {
     this.book = ePub(data);
   }
 
-  async render(el: HTMLElement, theme: RenderTheme): Promise<void> {
+  async render(el: HTMLElement, theme: RenderTheme, startCfi?: string): Promise<void> {
     this.rendition = this.book.renderTo(el, {
       width: '100%',
       height: '100%',
@@ -706,9 +718,11 @@ export class ReaderBook {
     });
     this.rendition.themes.default(themeStyles(theme));
     await this.book.ready;
-    // Generate locations for percent progress (1024 chars/loc is a good default).
-    await this.book.locations.generate(1024);
-    await this.rendition.display();
+    // Paint the saved position (or book start) first so there's no flash-to-chapter-1.
+    await this.rendition.display(startCfi);
+    // Then generate locations in the background (this can take seconds on a big book).
+    // Percent progress stays 0 until it resolves, which is acceptable.
+    this.locationsReady = this.book.locations.generate(1024).catch(() => undefined);
   }
 
   applyTheme(theme: RenderTheme): void {
@@ -718,14 +732,12 @@ export class ReaderBook {
   async next(): Promise<void> { await this.rendition?.next(); }
   async prev(): Promise<void> { await this.rendition?.prev(); }
 
-  async displayCfi(cfi: string): Promise<void> {
-    await this.rendition?.display(cfi);
-  }
-
   onRelocated(cb: (loc: { cfi: string; percent: number }) => void): void {
     this.rendition?.on('relocated', (location: any) => {
       const cfi = location?.start?.cfi ?? '';
-      const percent = cfi ? this.book.locations.percentageFromCfi(cfi) : 0;
+      const percent = cfi && this.book.locations.length()
+        ? this.book.locations.percentageFromCfi(cfi)
+        : 0;
       cb({ cfi, percent });
     });
   }
@@ -751,10 +763,10 @@ git commit -m "feat: epub.js wrapper for metadata, rendering, locations"
 
 ---
 
-### Task 6: Settings + Library contexts (`state/settings.ts`, `state/library.ts`)
+### Task 6: Settings + Library contexts (`state/settings.tsx`, `state/library.tsx`)
 
 **Files:**
-- Create: `src/state/settings.ts`, `src/state/library.ts`
+- Create: `src/state/settings.tsx`, `src/state/library.tsx`
 
 **Interfaces:**
 - Consumes: `storage/db` accessors and types, `hashBytes`, `parseEpubMetadata`.
@@ -762,7 +774,7 @@ git commit -m "feat: epub.js wrapper for metadata, rendering, locations"
   - `SettingsProvider` + `useSettings(): { settings: SettingsRecord; update: (patch: Partial<SettingsRecord>) => void }` (persists to IndexedDB on update).
   - `LibraryProvider` + `useLibrary(): { books: BookRecord[]; importFile: (file: File) => Promise<string>; remove: (id: string) => Promise<void> }`. `importFile` returns the new book's id.
 
-- [ ] **Step 1: Write `src/state/settings.ts`**
+- [ ] **Step 1: Write `src/state/settings.tsx`**
 
 ```tsx
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
@@ -798,7 +810,7 @@ export function useSettings(): SettingsCtx {
 }
 ```
 
-- [ ] **Step 2: Write `src/state/library.ts`**
+- [ ] **Step 2: Write `src/state/library.tsx`**
 
 ```tsx
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
@@ -1157,11 +1169,11 @@ export function Reader({ bookId }: { bookId: string }) {
     (async () => {
       const rec = await getBook(bookId);
       if (!rec || cancelled || !hostRef.current) return;
+      const saved = await getProgress(bookId);
       const rb = new ReaderBook(rec.data);
       bookRef.current = rb;
-      await rb.render(hostRef.current, theme);
-      const saved = await getProgress(bookId);
-      if (saved?.cfi) await rb.displayCfi(saved.cfi);
+      // Pass the saved CFI into render so it paints there directly (no flash).
+      await rb.render(hostRef.current, theme, saved?.cfi);
       rb.onRelocated(({ cfi, percent }) => {
         setPercent(percent);
         clearTimeout(saveTimer);
@@ -1345,7 +1357,7 @@ git commit -m "feat: PWA icons, installable manifest, offline app shell"
 
 **2. Placeholder scan:** No "TBD"/"handle edge cases"/"write tests for the above" — all code is concrete. The `App.tsx` "Reader mounts here" text is an intentional intermediate state in Task 7, replaced with the real component in Task 8. ✅
 
-**3. Type consistency:** `BookRecord`/`ProgressRecord`/`SettingsRecord` defined in Task 3 are consumed unchanged in Tasks 5–8. `RenderTheme { fontFamily, fontSizePx, brightness }` defined in Task 5 is constructed identically in Task 8. `ReaderBook` methods (`render`, `next`, `prev`, `displayCfi`, `onRelocated`, `applyTheme`, `destroy`) called in Task 8 all match Task 5. `useSettings`/`useLibrary` signatures match between Task 6 and Tasks 7–8. ✅
+**3. Type consistency:** `BookRecord`/`ProgressRecord`/`SettingsRecord` defined in Task 3 are consumed unchanged in Tasks 5–8. `RenderTheme { fontFamily, fontSizePx, brightness }` defined in Task 5 is constructed identically in Task 8. `ReaderBook` methods (`render(el, theme, startCfi?)`, `next`, `prev`, `onRelocated`, `applyTheme`, `destroy`) called in Task 8 all match Task 5. `useSettings`/`useLibrary` signatures match between Task 6 and Tasks 7–8. ✅
 
 ---
 
