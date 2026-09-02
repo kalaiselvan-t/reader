@@ -25,6 +25,11 @@ export async function parseEpubMetadata(
   } catch {
     coverDataUrl = undefined;
   }
+  // Let epub.js's background navigation load settle before destroying the book —
+  // destroying while `loadNavigation` is still in flight leaves `book.loading`
+  // undefined by the time its `.then()` callback runs, producing an unhandled
+  // TypeError on every real EPUB import.
+  await book.loaded.navigation.catch(() => {});
   book.destroy();
   return {
     title: meta.title || 'Untitled',
