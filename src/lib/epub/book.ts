@@ -28,8 +28,14 @@ export async function parseEpubMetadata(
   // Let epub.js's background navigation load settle before destroying the book —
   // destroying while `loadNavigation` is still in flight leaves `book.loading`
   // undefined by the time its `.then()` callback runs, producing an unhandled
-  // TypeError on every real EPUB import.
-  await book.loaded.navigation.catch(() => {});
+  // TypeError on every real EPUB import. `book.loaded.navigation` only ever
+  // resolves (epub.js never rejects it), so on a malformed EPUB where nav
+  // parsing never completes it would hang forever — race it against a short
+  // timeout so `destroy()` always eventually runs.
+  await Promise.race([
+    book.loaded.navigation.catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 3000)),
+  ]);
   book.destroy();
   return {
     title: meta.title || 'Untitled',
