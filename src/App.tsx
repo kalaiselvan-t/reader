@@ -3,6 +3,7 @@ import { SettingsProvider } from './state/settings';
 import { LibraryProvider } from './state/library';
 import { TopBar } from './components/TopBar';
 import { Library } from './components/Library';
+import { Reader } from './components/Reader';
 
 export default function App() {
   const [openBookId, setOpenBookId] = useState<string | null>(null);
@@ -13,9 +14,7 @@ export default function App() {
         {openBookId ? (
           <>
             <TopBar title="Reading" onBack={() => setOpenBookId(null)} />
-            <div style={{ padding: 18, color: 'var(--text-2)' }}>
-              Reader mounts here (Task 8): {openBookId}
-            </div>
+            <Reader bookId={openBookId} />
           </>
         ) : (
           <>
