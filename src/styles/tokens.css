@@ -1,0 +1,15 @@
+:root {
+  --bg: #0B0B0D;
+  --surface: #17171A;
+  --text: #E8E4DC;
+  --text-2: #9A968E;
+  --accent: #E0B15D;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-read: "Literata", "Newsreader", Georgia, serif;
+
+  --reading-measure: 66ch;
+  --reading-line: 1.6;
+  --radius: 14px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
