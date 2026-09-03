@@ -3,12 +3,14 @@ import { ReaderBook, type RenderTheme } from '../lib/epub/book';
 import { getBook, getProgress, putProgress } from '../lib/storage/db';
 import { useSettings } from '../state/settings';
 import { ReaderControls } from './ReaderControls';
+import { SpeedReadOverlay } from './SpeedReadOverlay';
 
 export function Reader({ bookId }: { bookId: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<ReaderBook | null>(null);
   const [percent, setPercent] = useState(0);
   const [showControls, setShowControls] = useState(false);
+  const [speedText, setSpeedText] = useState<string | null>(null);
   const { settings } = useSettings();
 
   const theme: RenderTheme = {
@@ -68,6 +70,11 @@ export function Reader({ bookId }: { bookId: string }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const openSpeedRead = async () => {
+    const t = await bookRef.current?.extractForward();
+    if (t && t.trim()) setSpeedText(t);
+  };
+
   return (
     <div style={{ position: 'absolute', inset: 0, top: 56 }}>
       <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
@@ -90,12 +97,22 @@ export function Reader({ bookId }: { bookId: string }) {
       </div>
 
       <button
+        onClick={openSpeedRead}
+        aria-label="Speed read"
+        style={{ position: 'absolute', right: 64, bottom: 16, zIndex: 20 }}
+      >
+        ⚡
+      </button>
+      <button
         onClick={() => setShowControls((s) => !s)}
         style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 20 }}
       >
         Aa
       </button>
       {showControls && <ReaderControls onClose={() => setShowControls(false)} />}
+      {speedText !== null && (
+        <SpeedReadOverlay text={speedText} onClose={() => setSpeedText(null)} />
+      )}
     </div>
   );
 }
