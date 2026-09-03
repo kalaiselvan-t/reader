@@ -53,4 +53,18 @@ describe('storage/db', () => {
     await putSettings({ ...DEFAULT_SETTINGS, fontSize: 24 });
     expect((await getSettings()).fontSize).toBe(24);
   });
+
+  it('defaults speedMode to rsvp', async () => {
+    expect(DEFAULT_SETTINGS.speedMode).toBe('rsvp');
+    expect((await getSettings()).speedMode).toBe('rsvp');
+  });
+
+  it('merges stored settings over defaults so missing new fields are filled', async () => {
+    // Simulate a settings record persisted before `speedMode` existed.
+    const legacy = { id: 'app', readingFont: 'Newsreader', fontSize: 18, brightness: 1, wpm: 300, chunkSize: 1, fixation: 'med' } as any;
+    await putSettings(legacy);
+    const s = await getSettings();
+    expect(s.readingFont).toBe('Newsreader'); // stored value preserved
+    expect(s.speedMode).toBe('rsvp');         // missing field filled from defaults
+  });
 });

@@ -26,6 +26,7 @@ export interface SettingsRecord {
   wpm: number;
   chunkSize: number;
   fixation: 'low' | 'med' | 'high';
+  speedMode: 'rsvp' | 'bionic';
   lastBookId?: string;
 }
 
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS: SettingsRecord = {
   wpm: 300,
   chunkSize: 1,
   fixation: 'med',
+  speedMode: 'rsvp',
 };
 
 interface ReaderDB extends DBSchema {
@@ -79,7 +81,8 @@ export async function getProgress(bookId: string): Promise<ProgressRecord | unde
   return (await db()).get('progress', bookId);
 }
 export async function getSettings(): Promise<SettingsRecord> {
-  return (await (await db()).get('settings', 'app')) ?? DEFAULT_SETTINGS;
+  const stored = await (await db()).get('settings', 'app');
+  return stored ? { ...DEFAULT_SETTINGS, ...stored } : DEFAULT_SETTINGS;
 }
 export async function putSettings(s: SettingsRecord): Promise<void> {
   await (await db()).put('settings', s);
