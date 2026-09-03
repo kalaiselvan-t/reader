@@ -205,16 +205,32 @@ export class ReaderBook {
         const blockNodes: any[] = root?.querySelectorAll
           ? Array.from(root.querySelectorAll(blockSelector))
           : [];
-        // Drop container blocks that themselves contain nested block
-        // elements (e.g. a <blockquote> wrapping a <p>) so text isn't
-        // emitted twice.
-        const leaves = blockNodes.filter((n: any) => !n.querySelector(blockSelector));
+        // For a leaf block (no nested block elements), take its full text.
+        // For a container that also holds nested block elements (e.g. a
+        // <blockquote> wrapping a <p>, or a <li> wrapping a nested <ul>),
+        // take only its own direct text-node children — the nested block's
+        // text is already covered by its own entry in `blockNodes` — so
+        // lead-in text isn't lost but nothing is double-counted.
+        // `querySelectorAll` returns document order, so a container's
+        // lead-in text is pushed before its nested block's text below,
+        // preserving reading order.
+        const blocks: string[] = [];
+        for (const n of blockNodes as any[]) {
+          if (n.querySelector(blockSelector)) {
+            const direct = Array.from(n.childNodes)
+              .filter((c: any) => c.nodeType === 3)
+              .map((c: any) => ((c.textContent ?? '') as string).replace(/\s+/g, ' ').trim())
+              .filter(Boolean)
+              .join(' ');
+            if (direct) blocks.push(direct);
+          } else {
+            const t = ((n.textContent ?? '') as string).replace(/\s+/g, ' ').trim();
+            if (t) blocks.push(t);
+          }
+        }
         let text: string;
-        if (leaves.length) {
-          text = leaves
-            .map((n: any) => ((n.textContent ?? '') as string).replace(/\s+/g, ' ').trim())
-            .filter(Boolean)
-            .join('\n\n');
+        if (blocks.length) {
+          text = blocks.join('\n\n');
         } else {
           // No recognized block elements (unusual markup) — fall back to
           // collapsing whatever whitespace-delimited paragraphs exist.
