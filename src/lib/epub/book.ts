@@ -175,6 +175,66 @@ export class ReaderBook {
     });
   }
 
+  /**
+   * Plain text from the current chapter forward, across following spine
+   * sections, up to `maxChars`. Paragraph blocks are separated by blank lines
+   * so the tokenizer can detect paragraph ends. Used to feed the speed-reading
+   * overlays from the reader's current position.
+   */
+  async extractForward(maxChars = 20000): Promise<string> {
+    if (!this.rendition) return '';
+    const loc = this.rendition.currentLocation() as any;
+    const startIndex: number = loc?.start?.index ?? 0;
+    const spineItems: any[] = (this.book.spine as any)?.spineItems ?? [];
+    const loader = (this.book.load as any).bind(this.book);
+    const blockSelector = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, dd, dt, pre, td';
+    let out = '';
+    for (let i = startIndex; i < spineItems.length && out.length < maxChars; i++) {
+      const section = spineItems[i];
+      try {
+        const doc = await section.load(loader);
+        // epub.js resolves `section.load()` to the section's `documentElement`
+        // (an Element), not a Document — so `doc.body` is usually undefined.
+        // Look up <body> explicitly (falling back to the element itself) so
+        // <head> text (e.g. <title>) doesn't leak into the extracted text.
+        const root: any = doc?.body ?? doc?.querySelector?.('body') ?? doc;
+        // `textContent` alone collapses `</p><p>` into zero newlines (real
+        // paragraph breaks in EPUB markup come from tags, not blank lines in
+        // the source), so walk block-level elements and join *those* with
+        // blank lines instead of relying on whitespace already in the markup.
+        const blockNodes: any[] = root?.querySelectorAll
+          ? Array.from(root.querySelectorAll(blockSelector))
+          : [];
+        // Drop container blocks that themselves contain nested block
+        // elements (e.g. a <blockquote> wrapping a <p>) so text isn't
+        // emitted twice.
+        const leaves = blockNodes.filter((n: any) => !n.querySelector(blockSelector));
+        let text: string;
+        if (leaves.length) {
+          text = leaves
+            .map((n: any) => ((n.textContent ?? '') as string).replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .join('\n\n');
+        } else {
+          // No recognized block elements (unusual markup) — fall back to
+          // collapsing whatever whitespace-delimited paragraphs exist.
+          const raw: string = root?.textContent ?? '';
+          text = raw
+            .split(/\n{2,}/)
+            .map((block: string) => block.replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .join('\n\n');
+        }
+        if (text) out += (out ? '\n\n' : '') + text;
+      } catch {
+        // skip unreadable sections
+      } finally {
+        try { section.unload(); } catch { /* ignore */ }
+      }
+    }
+    return out.slice(0, maxChars);
+  }
+
   destroy(): void {
     // Referenced (not awaited) so the strict `noUnusedLocals` check doesn't flag this
     // field; background location generation is best-effort and doesn't block teardown.
