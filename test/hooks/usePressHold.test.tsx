@@ -2,8 +2,16 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { usePressHold } from '../../src/hooks/usePressHold';
 
-function Harness({ onStart, onStop }: { onStart: () => void; onStop: () => void }) {
-  const h = usePressHold(onStart, onStop);
+function Harness({
+  onStart,
+  onStop,
+  useSpace,
+}: {
+  onStart: () => void;
+  onStop: () => void;
+  useSpace?: boolean;
+}) {
+  const h = usePressHold(onStart, onStop, { useSpace });
   return <div data-testid="surface" {...h} style={{ width: 100, height: 100 }} />;
 }
 
@@ -53,5 +61,32 @@ describe('usePressHold', () => {
     input.focus();
     fireEvent.keyDown(input, { code: 'Space' });
     expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it('stops on Space keyup even if focus shifted to a form control mid-hold', () => {
+    const onStart = vi.fn();
+    const onStop = vi.fn();
+    const { container } = render(
+      <div>
+        <input data-testid="inp" />
+        <Harness onStart={onStart} onStop={onStop} />
+      </div>
+    );
+    const input = container.querySelector('input')!;
+    fireEvent.keyDown(window, { code: 'Space' });
+    expect(onStart).toHaveBeenCalledTimes(1);
+    input.focus();
+    fireEvent.keyUp(input, { code: 'Space' });
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores Space entirely when useSpace is false', () => {
+    const onStart = vi.fn();
+    const onStop = vi.fn();
+    render(<Harness onStart={onStart} onStop={onStop} useSpace={false} />);
+    fireEvent.keyDown(window, { code: 'Space' });
+    fireEvent.keyUp(window, { code: 'Space' });
+    expect(onStart).not.toHaveBeenCalled();
+    expect(onStop).not.toHaveBeenCalled();
   });
 });

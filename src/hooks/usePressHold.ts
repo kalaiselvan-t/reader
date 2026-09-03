@@ -43,16 +43,15 @@ export function usePressHold(
   useEffect(() => {
     if (opts?.useSpace === false) return;
     const down = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !e.repeat && !isFormElement(e.target)) {
-        e.preventDefault();
-        start();
-      }
+      if (e.code !== 'Space' || isFormElement(e.target)) return;
+      e.preventDefault();       // suppress page scroll on every Space (incl. repeats)
+      if (!e.repeat) start();   // start once; repeats just keep scroll suppressed
     };
     const up = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !isFormElement(e.target)) {
-        e.preventDefault();
-        stop();
-      }
+      if (e.code !== 'Space') return;
+      if (holding.current) e.preventDefault();
+      stop();                   // stop() self-guards on holding.current, so this is
+                                 // a no-op if we never started (e.g. Space typed in a form)
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
