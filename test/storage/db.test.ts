@@ -67,4 +67,9 @@ describe('storage/db', () => {
     expect(s.readingFont).toBe('Newsreader'); // stored value preserved
     expect(s.speedMode).toBe('rsvp');         // missing field filled from defaults
   });
+
+  it('round-trips an optional driveFolderId setting', async () => {
+    await putSettings({ ...DEFAULT_SETTINGS, driveFolderId: '1AbC-XyZ_0123456789' });
+    expect((await getSettings()).driveFolderId).toBe('1AbC-XyZ_0123456789');
+  });
 });

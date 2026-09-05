@@ -27,6 +27,7 @@ export interface SettingsRecord {
   chunkSize: number;
   fixation: 'low' | 'med' | 'high';
   speedMode: 'rsvp' | 'bionic';
+  driveFolderId?: string;
   lastBookId?: string;
 }
 

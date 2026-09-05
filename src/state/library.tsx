@@ -4,11 +4,14 @@ import {
 } from '../lib/storage/db';
 import { hashBytes } from '../lib/hash';
 import { parseEpubMetadata } from '../lib/epub/book';
+import { parseFolderId } from '../lib/drive/folderLink';
+import { verifyFolder, listEpubFiles, downloadFile } from '../lib/drive/driveClient';
 
 interface LibraryCtx {
   books: BookRecord[];
   importFile: (file: File) => Promise<string>;
   remove: (id: string) => Promise<void>;
+  syncDriveFolder: (accessToken: string, folderInput: string) => Promise<{ added: number; skipped: number; failed: number }>;
 }
 
 const Ctx = createContext<LibraryCtx | null>(null);
@@ -47,7 +50,61 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     await refresh();
   };
 
-  return <Ctx.Provider value={{ books, importFile, remove }}>{children}</Ctx.Provider>;
+  const syncDriveFolder = async (
+    accessToken: string,
+    folderInput: string
+  ): Promise<{ added: number; skipped: number; failed: number }> => {
+    const folderId = parseFolderId(folderInput);
+    if (!folderId) {
+      throw new Error("Couldn't find a folder id in that link.");
+    }
+    // Confirm this is a real, visible folder before listing — a bogus id
+    // would otherwise silently produce "0 added", indistinguishable from a
+    // real empty folder.
+    await verifyFolder(accessToken, folderId);
+    const files = await listEpubFiles(accessToken, folderId);
+    const existingDriveIds = new Set(
+      (await getAllBooks()).map((b) => b.driveFileId).filter(Boolean)
+    );
+    let added = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const file of files) {
+      if (existingDriveIds.has(file.id)) {
+        skipped += 1;
+        continue;
+      }
+      // Each file is isolated: one corrupt/unparseable EPUB is counted and
+      // skipped, not allowed to abort the whole sync and lose books already
+      // added earlier in this same run.
+      try {
+        const data = await downloadFile(accessToken, file.id);
+        const id = hashBytes(data);
+        const meta = await parseEpubMetadata(data);
+        await putBook({
+          id,
+          title: meta.title,
+          author: meta.author,
+          coverDataUrl: meta.coverDataUrl,
+          source: 'drive',
+          driveFileId: file.id,
+          data,
+          addedAt: Date.now(),
+        });
+        added += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    await refresh();
+    return { added, skipped, failed };
+  };
+
+  return (
+    <Ctx.Provider value={{ books, importFile, remove, syncDriveFolder }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export function useLibrary(): LibraryCtx {
