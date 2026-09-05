@@ -11,7 +11,7 @@ interface LibraryCtx {
   books: BookRecord[];
   importFile: (file: File) => Promise<string>;
   remove: (id: string) => Promise<void>;
-  syncDriveFolder: (accessToken: string, folderInput: string) => Promise<{ added: number; skipped: number; failed: number }>;
+  syncDriveFolder: (accessToken: string, folderInput: string) => Promise<{ added: number; skipped: number; failed: number; relinked: number }>;
 }
 
 const Ctx = createContext<LibraryCtx | null>(null);
@@ -53,7 +53,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const syncDriveFolder = async (
     accessToken: string,
     folderInput: string
-  ): Promise<{ added: number; skipped: number; failed: number }> => {
+  ): Promise<{ added: number; skipped: number; failed: number; relinked: number }> => {
     const folderId = parseFolderId(folderInput);
     if (!folderId) {
       throw new Error("Couldn't find a folder id in that link.");
@@ -63,12 +63,20 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     // real empty folder.
     await verifyFolder(accessToken, folderId);
     const files = await listEpubFiles(accessToken, folderId);
+    const existingBooks = await getAllBooks();
     const existingDriveIds = new Set(
-      (await getAllBooks()).map((b) => b.driveFileId).filter(Boolean)
+      existingBooks.map((b) => b.driveFileId).filter((id): id is string => Boolean(id))
     );
+    // All existing book ids (regardless of source) — lets us tell a
+    // genuinely new download apart from one that just re-links a book
+    // already in the library under a different source (e.g. imported
+    // locally first, now also found in the synced Drive folder). Without
+    // this, re-linking the same content would inflate "added".
+    const existingIds = new Set(existingBooks.map((b) => b.id));
     let added = 0;
     let skipped = 0;
     let failed = 0;
+    let relinked = 0;
     for (const file of files) {
       if (existingDriveIds.has(file.id)) {
         skipped += 1;
@@ -81,6 +89,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         const data = await downloadFile(accessToken, file.id);
         const id = hashBytes(data);
         const meta = await parseEpubMetadata(data);
+        const isRelink = existingIds.has(id);
         await putBook({
           id,
           title: meta.title,
@@ -91,13 +100,17 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
           data,
           addedAt: Date.now(),
         });
-        added += 1;
+        if (isRelink) {
+          relinked += 1;
+        } else {
+          added += 1;
+        }
       } catch {
         failed += 1;
       }
     }
     await refresh();
-    return { added, skipped, failed };
+    return { added, skipped, failed, relinked };
   };
 
   return (
