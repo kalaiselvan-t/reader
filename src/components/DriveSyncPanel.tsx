@@ -3,6 +3,7 @@ import { useAuth } from '../state/auth';
 import { useLibrary } from '../state/library';
 import { useSettings } from '../state/settings';
 import { parseFolderId } from '../lib/drive/folderLink';
+import { DriveAuthError } from '../lib/drive/driveClient';
 
 export function DriveSyncPanel() {
   const { status, deniedEmail, connect, signOut, accessToken } = useAuth();
@@ -34,6 +35,7 @@ export function DriveSyncPanel() {
       <div style={panelStyle}>
         <span style={{ color: 'var(--text-2)', fontSize: 13 }}>Sync EPUBs from a Google Drive folder.</span>
         <button onClick={connect}>Connect Drive</button>
+        {message && <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{message}</span>}
       </div>
     );
   }
@@ -80,7 +82,12 @@ export function DriveSyncPanel() {
       const failedPart = result.failed > 0 ? `, ${result.failed} failed` : '';
       setMessage(`Added ${result.added}, already had ${result.skipped}${relinkedPart}${failedPart}.`);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Sync failed.');
+      if (err instanceof DriveAuthError) {
+        signOut();
+        setMessage('Drive session expired — connect again.');
+      } else {
+        setMessage(err instanceof Error ? err.message : 'Sync failed.');
+      }
     } finally {
       setSyncing(false);
     }

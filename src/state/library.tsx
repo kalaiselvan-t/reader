@@ -5,7 +5,7 @@ import {
 import { hashBytes } from '../lib/hash';
 import { parseEpubMetadata } from '../lib/epub/book';
 import { parseFolderId } from '../lib/drive/folderLink';
-import { verifyFolder, listEpubFiles, downloadFile } from '../lib/drive/driveClient';
+import { verifyFolder, listEpubFiles, downloadFile, DriveAuthError } from '../lib/drive/driveClient';
 
 interface LibraryCtx {
   books: BookRecord[];
@@ -100,12 +100,26 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
           data,
           addedAt: Date.now(),
         });
+        // A same-content file appearing again later in this same batch (e.g.
+        // "book.epub" and "book (1).epub") must now be recognized as a
+        // relink, not counted as a second "added" — putBook just overwrote
+        // the same record.
+        existingIds.add(id);
         if (isRelink) {
           relinked += 1;
         } else {
           added += 1;
         }
-      } catch {
+      } catch (err) {
+        // An expired/revoked token (401/403) isn't a per-file failure — it
+        // means every remaining download will fail the same way. Save what
+        // was already written this run, then let it propagate so the caller
+        // can send the user back to "Connect Drive" instead of reporting a
+        // pile of bogus per-file failures.
+        if (err instanceof DriveAuthError) {
+          await refresh();
+          throw err;
+        }
         failed += 1;
       }
     }
