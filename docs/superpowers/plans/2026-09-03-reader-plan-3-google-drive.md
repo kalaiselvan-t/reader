@@ -178,7 +178,7 @@ VITE_OWNER_EMAIL=kalaiselvant0@gmail.com
 - [ ] **Step 3: Self-check the runbook**
 
 Confirm the document covers, in order: project creation, enabling the Drive
-API, OAuth consent screen (External, Testing, both scopes, test user added),
+API, OAuth consent screen (External, Testing, the single drive.readonly scope, test user added),
 OAuth Client ID creation (Web application, localhost origin), and the
 `.env.local` values to set. Confirm the "known limitations" section is
 present so the owner isn't surprised by the 7-day re-consent or the
