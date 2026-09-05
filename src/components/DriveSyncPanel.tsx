@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../state/auth';
 import { useLibrary } from '../state/library';
 import { useSettings } from '../state/settings';
@@ -11,6 +11,17 @@ export function DriveSyncPanel() {
   const [folderInput, setFolderInput] = useState(settings.driveFolderId ?? '');
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  // Settings load asynchronously (SettingsProvider starts at DEFAULT_SETTINGS
+  // and resolves later), so the useState initializer above runs before
+  // settings.driveFolderId is available and its result is discarded. Sync
+  // once the real value shows up — but only if the user hasn't already
+  // started typing, so this can't clobber in-progress input.
+  useEffect(() => {
+    if (settings.driveFolderId && !folderInput) {
+      setFolderInput(settings.driveFolderId);
+    }
+  }, [settings.driveFolderId]);
 
   const panelStyle: React.CSSProperties = {
     display: 'flex', flexDirection: 'column', gap: 10, padding: 16,
