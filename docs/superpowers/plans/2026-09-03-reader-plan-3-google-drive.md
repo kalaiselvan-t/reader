@@ -602,7 +602,7 @@ git commit -m "feat: auth context enforcing the single-owner email allowlist"
   - `verifyFolder(accessToken: string, folderId: string): Promise<void>` — confirms the ID actually refers to an existing, non-trashed Drive **folder** the account can see; throws a specific "folder not found" error otherwise. This exists because `parseFolderId` (Task 3) only checks the *shape* of a pasted string, not whether it's real — without this check, a bogus ID silently produces "Added 0, already had 0", indistinguishable from a real, empty folder.
   - `listEpubFiles(accessToken: string, folderId: string): Promise<{ id: string; name: string }[]>` — lists non-trashed EPUB files in the folder (filters by name ending `.epub` or Drive's epub mimetype).
   - `downloadFile(accessToken: string, fileId: string): Promise<ArrayBuffer>`.
-  - `useLibrary()` gains `syncDriveFolder(accessToken: string, folderInput: string): Promise<{ added: number; skipped: number; failed: number }>` — parses the folder input, verifies the folder exists, lists files, skips any whose `driveFileId` is already in the library, downloads + imports the rest as `source: 'drive'` books. Each file's download/parse/import is individually try/caught — one corrupt EPUB is counted in `failed` and does not abort the sync or lose books already added earlier in the same run. Throws (does not swallow) on a parse failure of the folder input itself or a "folder not found" — those are whole-sync failures, unlike a single bad file.
+  - `useLibrary()` gains `syncDriveFolder(accessToken: string, folderInput: string): Promise<{ added: number; skipped: number; failed: number; relinked: number }>` — parses the folder input, verifies the folder exists, lists files, skips any whose `driveFileId` is already in the library, downloads + imports the rest as `source: 'drive'` books. Each file's download/parse/import is individually try/caught — one corrupt EPUB is counted in `failed` and does not abort the sync or lose books already added earlier in the same run. A downloaded file whose content hash already matches an existing book (imported locally, now found in Drive too) is counted as `relinked`, not `added` — it still gets `putBook`-ed with `source: 'drive'`/`driveFileId` set so future syncs skip it via the dedup set, but the count stays honest about what's actually new. Throws (does not swallow) on a parse failure of the folder input itself or a "folder not found" — those are whole-sync failures, unlike a single bad file.
 
 - [ ] **Step 1: Add the failing settings test**
 
@@ -704,7 +704,7 @@ import { parseEpubMetadata } from '../lib/epub/book';
 
 Add to the `LibraryCtx` interface:
 ```ts
-  syncDriveFolder: (accessToken: string, folderInput: string) => Promise<{ added: number; skipped: number; failed: number }>;
+  syncDriveFolder: (accessToken: string, folderInput: string) => Promise<{ added: number; skipped: number; failed: number; relinked: number }>;
 ```
 
 Add the implementation inside `LibraryProvider`, alongside the existing `importFile`/`remove`:
@@ -712,7 +712,7 @@ Add the implementation inside `LibraryProvider`, alongside the existing `importF
   const syncDriveFolder = async (
     accessToken: string,
     folderInput: string
-  ): Promise<{ added: number; skipped: number; failed: number }> => {
+  ): Promise<{ added: number; skipped: number; failed: number; relinked: number }> => {
     const folderId = parseFolderId(folderInput);
     if (!folderId) {
       throw new Error("Couldn't find a folder id in that link.");
@@ -722,12 +722,18 @@ Add the implementation inside `LibraryProvider`, alongside the existing `importF
     // real empty folder.
     await verifyFolder(accessToken, folderId);
     const files = await listEpubFiles(accessToken, folderId);
+    const existingBooks = await getAllBooks();
     const existingDriveIds = new Set(
-      (await getAllBooks()).map((b) => b.driveFileId).filter(Boolean)
+      existingBooks.map((b) => b.driveFileId).filter((id): id is string => Boolean(id))
     );
+    // Tracks ALL existing book ids (regardless of source) so a book already
+    // imported locally, and later found in the synced folder, is counted as
+    // relinked rather than misleadingly reported as newly added.
+    const existingIds = new Set(existingBooks.map((b) => b.id));
     let added = 0;
     let skipped = 0;
     let failed = 0;
+    let relinked = 0;
     for (const file of files) {
       if (existingDriveIds.has(file.id)) {
         skipped += 1;
@@ -740,6 +746,7 @@ Add the implementation inside `LibraryProvider`, alongside the existing `importF
         const data = await downloadFile(accessToken, file.id);
         const id = hashBytes(data);
         const meta = await parseEpubMetadata(data);
+        const isRelink = existingIds.has(id);
         await putBook({
           id,
           title: meta.title,
@@ -750,13 +757,13 @@ Add the implementation inside `LibraryProvider`, alongside the existing `importF
           data,
           addedAt: Date.now(),
         });
-        added += 1;
+        if (isRelink) relinked += 1; else added += 1;
       } catch {
         failed += 1;
       }
     }
     await refresh();
-    return { added, skipped, failed };
+    return { added, skipped, failed, relinked };
   };
 ```
 Add `syncDriveFolder` to the provider's context value alongside `books`, `importFile`, `remove`.
@@ -789,7 +796,7 @@ git commit -m "feat: Drive file listing/download and library sync, dedup by driv
   - `connecting`: a disabled/loading state.
   - `misconfigured`: a distinct message that the app itself isn't set up yet (pointing at the runbook), never phrased like a rejected sign-in.
   - `denied`: a clear message naming the rejected email and the one allowed account, with a "Try a different account" button that calls `signOut()`.
-  - `signed-in`: a folder-link text input (pre-filled from `settings.driveFolderId` if present) + a "Sync" button; on sync, calls `syncDriveFolder`, shows a result summary ("Added 3, already had 5, 1 failed" — omitting the failed clause when it's zero) or an error message, and persists the successfully-parsed folder id to settings for next time.
+  - `signed-in`: a folder-link text input (pre-filled from `settings.driveFolderId` if present) + a "Sync" button; on sync, calls `syncDriveFolder`, shows a result summary ("Added 3, already had 5, 1 relinked, 1 failed" — omitting the relinked/failed clauses when they're zero) or an error message, and persists the successfully-parsed folder id to settings for next time.
 
 - [ ] **Step 1: Implement `src/components/DriveSyncPanel.tsx`**
 
@@ -861,8 +868,9 @@ export function DriveSyncPanel() {
     try {
       const result = await syncDriveFolder(accessToken!, folderInput);
       update({ driveFolderId: parseFolderId(folderInput) ?? undefined });
+      const relinkedPart = result.relinked > 0 ? `, ${result.relinked} relinked` : '';
       const failedPart = result.failed > 0 ? `, ${result.failed} failed` : '';
-      setMessage(`Added ${result.added}, already had ${result.skipped}${failedPart}.`);
+      setMessage(`Added ${result.added}, already had ${result.skipped}${relinkedPart}${failedPart}.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Sync failed.');
     } finally {
