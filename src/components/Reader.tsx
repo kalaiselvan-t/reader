@@ -63,12 +63,13 @@ export function Reader({ bookId }: { bookId: string }) {
   // Keyboard page turns.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (speedText !== null) return; // don't turn pages while the speed-read overlay is open
       if (e.key === 'ArrowRight') bookRef.current?.next();
       if (e.key === 'ArrowLeft') bookRef.current?.prev();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [speedText]);
 
   const openSpeedRead = async () => {
     const t = await bookRef.current?.extractForward();
