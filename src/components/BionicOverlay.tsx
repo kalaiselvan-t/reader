@@ -14,7 +14,7 @@ export function BionicOverlay({ text, fixation, wpm }: { text: string; fixation:
     [text]
   );
 
-  // Auto-scroll while held, at a WPM-independent comfortable reading pace.
+  // Auto-scroll while held, at a reading pace derived from WPM.
   useEffect(() => {
     if (!holding) {
       if (raf.current) cancelAnimationFrame(raf.current);
@@ -59,7 +59,7 @@ export function BionicOverlay({ text, fixation, wpm }: { text: string; fixation:
         style={{
           overflowY: 'auto', width: 'min(92vw, var(--reading-measure))', height: '100%',
           padding: '32px 8px 96px', fontFamily: 'var(--font-read)', fontSize: 20,
-          lineHeight: 'var(--reading-line)', color: 'var(--text)',
+          lineHeight: 'var(--reading-line)', color: 'var(--text)', touchAction: 'pan-y',
         }}
       >
         {paragraphs.map((para, pi) => (
