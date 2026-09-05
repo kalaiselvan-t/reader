@@ -27,7 +27,13 @@ export function loadGis(): Promise<void> {
     script.src = 'https://accounts.google.com/gsi/client';
     script.async = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
+    script.onerror = () => {
+      // Reset so a later loadGis() call retries instead of returning this
+      // same rejected promise forever — otherwise one network hiccup
+      // permanently breaks "Connect Drive" for the rest of the session.
+      loadPromise = null;
+      reject(new Error('Failed to load Google Identity Services'));
+    };
     document.head.appendChild(script);
   });
   return loadPromise;
@@ -39,11 +45,11 @@ export function loadGis(): Promise<void> {
  * to call this, typically on an explicit "Connect Drive" click).
  */
 export async function requestAccessToken(): Promise<string> {
-  await loadGis();
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string;
   if (!clientId) {
     throw new Error('VITE_GOOGLE_CLIENT_ID is not set (see docs/superpowers/google-drive-setup-runbook.md)');
   }
+  await loadGis();
   return new Promise((resolve, reject) => {
     const client = window.google!.accounts.oauth2.initTokenClient({
       client_id: clientId,

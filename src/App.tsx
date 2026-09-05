@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AuthProvider } from './state/auth';
 import { SettingsProvider } from './state/settings';
 import { LibraryProvider } from './state/library';
 import { TopBar } from './components/TopBar';
@@ -9,20 +10,22 @@ export default function App() {
   const [openBookId, setOpenBookId] = useState<string | null>(null);
 
   return (
-    <SettingsProvider>
-      <LibraryProvider>
-        {openBookId ? (
-          <>
-            <TopBar title="Reading" onBack={() => setOpenBookId(null)} />
-            <Reader bookId={openBookId} />
-          </>
-        ) : (
-          <>
-            <TopBar title="Reader" />
-            <Library onOpenBook={setOpenBookId} />
-          </>
-        )}
-      </LibraryProvider>
-    </SettingsProvider>
+    <AuthProvider>
+      <SettingsProvider>
+        <LibraryProvider>
+          {openBookId ? (
+            <>
+              <TopBar title="Reading" onBack={() => setOpenBookId(null)} />
+              <Reader bookId={openBookId} />
+            </>
+          ) : (
+            <>
+              <TopBar title="Reader" />
+              <Library onOpenBook={setOpenBookId} />
+            </>
+          )}
+        </LibraryProvider>
+      </SettingsProvider>
+    </AuthProvider>
   );
 }

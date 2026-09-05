@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { useLibrary } from '../state/library';
 import { BookCover } from './BookCover';
+import { DriveSyncPanel } from './DriveSyncPanel';
 
 export function Library({ onOpenBook }: { onOpenBook: (id: string) => void }) {
   const { books, importFile } = useLibrary();
@@ -25,6 +26,7 @@ export function Library({ onOpenBook }: { onOpenBook: (id: string) => void }) {
 
   return (
     <div style={{ padding: 18 }}>
+      <DriveSyncPanel />
       <input
         ref={inputRef}
         type="file"
