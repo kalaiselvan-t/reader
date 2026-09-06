@@ -6,14 +6,21 @@ steps yourself — repo creation and Google Cloud Console changes both require
 your own login.
 
 **Time:** ~10 minutes. **Cost:** free (GitHub Pages + Actions are free for
-public and private repos on personal accounts, within generous free-tier
-minutes).
+public repos on personal accounts, within generous free-tier minutes).
 
-## 1. Create a new, dedicated, private repository
+## 1. Create a new, dedicated, public repository
 
 1. Go to https://github.com/new
 2. Owner: your account (`kalaiselvan-t`). Repository name: `reader`.
-3. **Visibility: Private.**
+3. **Visibility: Public.** This is required, not optional: GitHub Pages on a
+   private repo needs a paid GitHub plan (Pro/Team/Enterprise) — on GitHub
+   Free, Pages only serves public repos. This isn't a real reduction in
+   protection: the built site was always going to be publicly fetchable
+   once deployed regardless of repo visibility (that's how GitHub Pages
+   works). The actual gate is the OAuth Testing-mode allowlist + the app's
+   own email check from Plan 3, unaffected by this choice. Nothing
+   sensitive lives in the repo — the OAuth Client ID and owner email are
+   both non-secret values (see Step 3 below).
 4. Do **not** initialize with a README/`.gitignore`/license — this repo will
    receive the existing local history via `git push`, not start fresh.
 5. Click **Create repository**. Note the remote URL shown (SSH or HTTPS,
@@ -52,9 +59,10 @@ minutes).
 
 ## Known limitations (by design, not bugs)
 
-- The repo is **private**, but the *built site* is still public once
-  deployed — that's how GitHub Pages works for any repo visibility. Actual
-  protection is the OAuth Testing-mode allowlist + the app's own email
-  check from Plan 3, unchanged by this plan.
+- The repo is **public** (required for GitHub Pages on GitHub Free), and the
+  *built site* is public too once deployed — that's how GitHub Pages works.
+  Actual protection is the OAuth Testing-mode allowlist + the app's own
+  email check from Plan 3, unchanged by this plan. No secrets live in the
+  repo or its history.
 - The first deploy only happens after Task 3's push — nothing goes live from
   this runbook alone.
