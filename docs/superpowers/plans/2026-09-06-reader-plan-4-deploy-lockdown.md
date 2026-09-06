@@ -4,14 +4,14 @@
 
 **Goal:** Deploy Reader to a public GitHub Pages URL that installs on a phone, without touching the owner's existing `kalaiselvan-t.github.io` personal site, and without opening it up to anyone but the owner's allowlisted Google account (already enforced by Plan 3's app-level check + Google's OAuth Testing-mode allowlist).
 
-**Architecture:** A new, dedicated **private** GitHub repository hosts Reader as a **project page** (`kalaiselvan-t.github.io/reader/`), built and published by a **GitHub Actions** workflow on every push to `master` (Pages "Source: GitHub Actions", the modern flow — no `gh-pages` branch, no `gh` CLI needed anywhere in this plan). The existing OAuth Client from Plan 3 is reused — only its authorized origins gain one new entry — so no new Google Cloud project or consent-screen work is needed. `vite.config.ts`'s base path is mode-aware (`/` for local dev/preview, `/reader/` for the CI production build) so the established local dev workflow from Plans 1–3 (`http://localhost:5173`) keeps working unchanged.
+**Architecture:** A new, dedicated **public** GitHub repository hosts Reader as a **project page** (`kalaiselvan-t.github.io/reader/`), built and published by a **GitHub Actions** workflow on every push to `master` (Pages "Source: GitHub Actions", the modern flow — no `gh-pages` branch, no `gh` CLI needed anywhere in this plan). The repo is public because GitHub Pages on a **private** repo requires a paid GitHub plan (Pro/Team/Enterprise) — Pages on GitHub Free only serves from public repos. This is not a regression in protection: the design was always that the *built site* is publicly fetchable regardless of repo visibility (§4 of the design spec), with the OAuth Testing-mode allowlist + the app's own email check as the actual gate — unchanged by this visibility choice. Nothing sensitive lives in the repo (the Client ID and owner email are both non-secret, per the Global Constraints below). The existing OAuth Client from Plan 3 is reused — only its authorized origins gain one new entry — so no new Google Cloud project or consent-screen work is needed. `vite.config.ts`'s base path is mode-aware (`/` for local dev/preview, `/reader/` for the CI production build) so the established local dev workflow from Plans 1–3 (`http://localhost:5173`) keeps working unchanged.
 
 **Tech Stack:** GitHub Actions (`actions/checkout`, `actions/setup-node`, `actions/configure-pages`, `actions/upload-pages-artifact`, `actions/deploy-pages`) — all current, verified against 2026 documentation. Existing: Vite 5, `vite-plugin-pwa`, the Plan 3 auth/Drive code (unchanged by this plan).
 
 ## Global Constraints
 
 - Single user, no backend. This plan changes **hosting and build config only** — no application logic changes.
-- New repo is **private**, a **project page** (not the user page — `~/Dev/kalaiselvan-t.github.io` is a separate, existing Next.js site and must never be touched by this plan).
+- New repo is **public** (required — GitHub Pages on a private repo needs a paid GitHub plan; Free-tier Pages only serves public repos), a **project page** (not the user page — `~/Dev/kalaiselvan-t.github.io` is a separate, existing Next.js site and must never be touched by this plan). Public visibility is an accepted tradeoff, not a gap: the built site was always going to be publicly fetchable regardless of repo visibility (§4 of the design spec) — actual protection is the OAuth Testing-mode allowlist + the app's own email check, unchanged here. No secrets live in the repo: the Client ID and owner email are both non-sensitive (see the Variables-not-Secrets rationale below).
 - Deploy mechanism is **GitHub Actions** with Pages "Source: GitHub Actions" — not a `gh-pages` branch, not `peaceiris/actions-gh-pages`.
 - `VITE_GOOGLE_CLIENT_ID` / `VITE_OWNER_EMAIL` are injected into the Actions build as **repository Variables** (not Secrets — neither value is actually sensitive: the Client ID is a public identifier by Google's own documentation, and the owner email is already visible throughout this app's own source and docs). Using Variables rather than Secrets avoids treating non-sensitive config as if it needed secret-grade handling.
 - Google's "Authorized JavaScript origins" match **origin only** (scheme + host + port) — never a path. The new origin to authorize is `https://kalaiselvan-t.github.io`, with no `/reader` suffix, even though the app itself lives at `https://kalaiselvan-t.github.io/reader/`.
@@ -59,14 +59,21 @@ steps yourself — repo creation and Google Cloud Console changes both require
 your own login.
 
 **Time:** ~10 minutes. **Cost:** free (GitHub Pages + Actions are free for
-public and private repos on personal accounts, within generous free-tier
-minutes).
+public repos on personal accounts, within generous free-tier minutes).
 
-## 1. Create a new, dedicated, private repository
+## 1. Create a new, dedicated, public repository
 
 1. Go to https://github.com/new
 2. Owner: your account (`kalaiselvan-t`). Repository name: `reader`.
-3. **Visibility: Private.**
+3. **Visibility: Public.** This is required, not optional: GitHub Pages on a
+   private repo needs a paid GitHub plan (Pro/Team/Enterprise) — on GitHub
+   Free, Pages only serves public repos. This isn't a real reduction in
+   protection: the built site was always going to be publicly fetchable
+   once deployed regardless of repo visibility (that's how GitHub Pages
+   works). The actual gate is the OAuth Testing-mode allowlist + the app's
+   own email check from Plan 3, unaffected by this choice. Nothing
+   sensitive lives in the repo — the OAuth Client ID and owner email are
+   both non-secret values (see Step 3 below).
 4. Do **not** initialize with a README/`.gitignore`/license — this repo will
    receive the existing local history via `git push`, not start fresh.
 5. Click **Create repository**. Note the remote URL shown (SSH or HTTPS,
@@ -105,17 +112,18 @@ minutes).
 
 ## Known limitations (by design, not bugs)
 
-- The repo is **private**, but the *built site* is still public once
-  deployed — that's how GitHub Pages works for any repo visibility. Actual
-  protection is the OAuth Testing-mode allowlist + the app's own email
-  check from Plan 3, unchanged by this plan.
+- The repo is **public** (required for GitHub Pages on GitHub Free), and the
+  *built site* is public too once deployed — that's how GitHub Pages works.
+  Actual protection is the OAuth Testing-mode allowlist + the app's own
+  email check from Plan 3, unchanged by this plan. No secrets live in the
+  repo or its history.
 - The first deploy only happens after Task 3's push — nothing goes live from
   this runbook alone.
 ```
 
 - [ ] **Step 2: Self-check the runbook**
 
-Confirm it covers, in order: repo creation (private, project page, no
+Confirm it covers, in order: repo creation (public, project page, no
 auto-init), Pages source set to Actions, both repository Variables, and the
 new OAuth origin (origin only, no path, existing localhost entry preserved).
 
@@ -379,7 +387,7 @@ following the same pattern as Plans 1-3's followups docs.
 **1. Spec coverage (design spec §3 hosting + §4 access control, plus the decisions confirmed before Plan 3 started):**
 - New dedicated repo, project page, not the user page → Task 1. ✅
 - GitHub Actions auto-deploy → Tasks 2, 3. ✅
-- Private repo → Task 1. ✅
+- Public repo (revised from the original private-repo decision after task review + WebSearch confirmed GitHub Pages requires a paid plan for private-repo Pages on GitHub Free; owner explicitly chose "make it public" over upgrading — see this plan's revision note) → Task 1. ✅
 - Authorized origin added to the existing OAuth Client (§4.3's client reused, not recreated) → Task 1. ✅
 - Accepted limitation restated (§4: static shell is publicly fetchable regardless of repo visibility; only login is gated) → Task 1's runbook "Known limitations" section, consistent with the original design spec's own accepted limitation. ✅
 
@@ -392,6 +400,20 @@ following the same pattern as Plans 1-3's followups docs.
 ---
 
 ## Notes
+
+**Revision (during Task 1's review):** the plan originally specified a
+**private** repo. Task 1's task reviewer flagged that GitHub Pages does not
+serve private repos on GitHub's Free plan (confirmed via WebSearch against
+current GitHub docs) — private-repo Pages requires Pro/Team/Enterprise.
+Presented to the owner as a blocking conflict; the owner chose **public**
+repo over upgrading the GitHub plan. This plan (Architecture, Global
+Constraints, Task 1's runbook content, and this Self-Review) was updated
+throughout to say public, with the rationale that public visibility isn't a
+real reduction in protection — the built site was always going to be
+publicly fetchable regardless of repo visibility; the actual gate remains
+the OAuth Testing-mode allowlist + the app's own email check, both
+unchanged. No secrets live in the repo (Client ID and owner email are both
+non-sensitive, injected as Variables not Secrets).
 
 This is the last plan in the original four-plan roadmap (Foundation → Speed
 Reading → Google Drive → Deploy). No further plans are implied by the
